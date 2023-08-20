@@ -36,6 +36,7 @@ class Kind(Enum):
     BEGIN = "begin"  # First player begins the game after other palyers have joined.
     SETUP = "setup"  # Signal players that the server is setting up the game.
     STATE = "state"  # Player requested the latest state.
+    BET = "bet"  # Player places a bet. Only valid during the "betting" phase.
     INCR = "incr"
     ERR = "error"
 
@@ -104,6 +105,22 @@ async def play(
             elif message_kind == Kind.STATE:
                 game_view = game.get_view(player.player_id, join_key=True)
                 await websocket.send(json.dumps({"kind": str(Kind.STATE), "game": game_view.to_dict()}))
+            elif message_kind == Kind.BET:
+                if not game.is_betting_phase:
+                    logger.warning("Player-%d placed bet outside of betting phase", player.player_id)
+                    await websocket.send(error("Bet must specify Monster IDs"))
+
+                if monster_ids := data.get("monster_ids"):
+                    if isinstance(monster_ids, list):
+                        monser_bets = [str(monster_id) for monster_id in monster_ids]
+                        game.place_player_bets(player.player_id, monser_bets)
+
+                        game_view = game.get_view(player.player_id, join_key=True)
+                        await websocket.send(json.dumps({"kind": str(Kind.BET), "game": game_view.to_dict()}))
+                    else:
+                        await websocket.send(error("monster_ids must be an array"))
+                else:
+                    await websocket.send(error("Bet must specify Monster IDs"))
 
         except GameError as err:
             logger.debug("Player-%d violated a game rule: %s", player.player_id, err.message)

@@ -9,9 +9,7 @@ def test_monster_contract():
     demon_1 = Demon()
     data = asdict(demon_1)
 
-    assert (
-        demon_1.monster_id == "monster_demon"
-    ), "card_id data contract not working as expected"
+    assert demon_1.monster_id == "monster_demon", "card_id data contract not working as expected"
     assert data["monster_id"] == "monster_demon", "card_id is not converted by asdict"
 
     with pytest.raises(FrozenInstanceError):
