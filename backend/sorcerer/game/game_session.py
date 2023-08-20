@@ -10,7 +10,7 @@ from typing import Any
 from sorcerer.game.errors import GameError
 from sorcerer.game.judges import Judge, get_judge_types
 from sorcerer.game.monsters import Monster, get_monster_types
-from sorcerer.game.cards import Card
+from sorcerer.game.cards import Card, get_standard_deck
 from sorcerer.util import asdict_factory
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,8 @@ class GameView:
     player_id: int
     player_count: int
     game_phase: Phase
+    deck_count: int
+    discard_count: int
     created_at: datetime
     judge: Judge | None = None
     others: list[PlayerView] = field(default_factory=list)
@@ -61,6 +63,17 @@ class GameView:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self, dict_factory=asdict_factory)
+
+
+@dataclass(frozen=True)
+class DiscardView:
+    """
+    State view containing all discarded spells, monsters and judges.
+    """
+
+    spells: list[Card] = field(default_factory=list)
+    monsters: list[Monster] = field(default_factory=list)
+    judges: list[Judge] = field(default_factory=list)
 
 
 @dataclass
@@ -98,9 +111,12 @@ class GameSession:
     player_counter: int = 0
     phase: Phase = Phase.LOBBY
     judge: Judge | None = None
+    discarded_judges: list[Monster] = field(default_factory=list)
     players: list[PlayerSession] = field(default_factory=list)
     spells: list[Card] = field(default_factory=list)
+    discarded_spells: list[Card] = field(default_factory=list)
     monsters: list[Monster] = field(default_factory=list)
+    discarded_monsters: list[Monster] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     @property
@@ -110,6 +126,10 @@ class GameSession:
     @property
     def is_betting_phase(self) -> bool:
         return self.phase == Phase.BETTING
+
+    @property
+    def player_count(self) -> int:
+        return len(self.players)
 
     def find_player(self, player_id: int) -> PlayerSession | None:
         for player in self.players:
@@ -148,19 +168,88 @@ class GameSession:
 
         return chosen
 
+    def shuffle_spells(self):
+        """Shuffle the deck of card spells."""
+        random.shuffle(self.spells)
+
+    def try_draw_spell(self) -> Card | None:
+        """
+        Draw a spell from the top of the deck.
+
+        Returns ``None`` when the spell deck is empty.
+        """
+        if self.spells:
+            return self.spells.pop()
+        return None
+
+    def determine_hand_size(self) -> int:
+        """
+        Game rule for the number of cards dealt to each player.
+        """
+        if self.player_count <= 4:
+            return 8
+        elif self.player_count <= 5:
+            return 6
+        else:
+            return 5
+
+    def deal_cards(self, hand_size: int):
+        """
+        Fill each player's hand with spells from the deck, until their hand size
+        reaches the given limit.
+
+        If the spell deck is empty, dealing will stop.
+
+        This algorithm mimics how dealing works at a table, drawing one card for each
+        player in turn.
+        """
+        # Shallow copy the player container, because we
+        # will be mutating it during iteration.
+        players = self.players.copy()
+        index = 0
+
+        while players:
+            if not self.spells:
+                logger.debug("Game %s spell deck is empty", id(self))
+                break
+
+            player = players[index]
+
+            if player.card_count < hand_size:
+                spell_card = self.try_draw_spell()
+                if spell_card:
+                    player.cards.append(spell_card)
+                index += 1
+            else:
+                # Don't increment the index.
+                #
+                # Because the current player was removed,
+                # the next player moved up to the current index.
+                players.remove(player)
+
+            # List length will be zero when the last player is removed.
+            if players:
+                index = index % len(players)
+
     def begin_game(self):
         self.phase = Phase.SETUP
         logger.debug("Game %s beginning", id(self))
 
-        # 1. Choose Judge
+        # 1: Choose Judge
         judge_type = random.choice(get_judge_types())
         logger.debug("Game %s chose judge: %s", id(self), judge_type.__name__)
         self.judge = judge_type()
 
-        # 2. Choose Monsters
+        # 2: Choose Monsters
         self.monsters = self.choose_monsters()
 
-        # 3. Deal Cards
+        # 3: Fill Spell Deck
+        self.spells = get_standard_deck()
+        self.shuffle_spells()
+
+        # 4. Deal Cards
+        hand_size = self.determine_hand_size()
+        self.deal_cards(hand_size)
 
         self.phase = Phase.BETTING
 
@@ -233,6 +322,8 @@ class GameSession:
             player_id,
             player_count=len(self.players),
             game_phase=self.phase,
+            deck_count=len(self.spells),
+            discard_count=len(self.discarded_spells),
             others=others,
             monsters=self.monsters.copy(),
             judge=self.judge,

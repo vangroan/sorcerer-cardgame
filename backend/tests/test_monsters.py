@@ -15,7 +15,7 @@ def test_monster_contract():
     with pytest.raises(FrozenInstanceError):
         demon_1.monster_id = "****"
 
-    demon_1.cards.append(Firebolt())
+    demon_1.cards.append(Firebolt(card_id=0))
     print("Demon: ", demon_1)
 
 
@@ -26,6 +26,6 @@ def test_shared_state():
 
     assert demon_1 is not demon_2
 
-    demon_1.cards.append(Firebolt())
+    demon_1.cards.append(Firebolt(card_id=0))
     assert len(demon_1.cards) == 1
     assert len(demon_2.cards) == 0
