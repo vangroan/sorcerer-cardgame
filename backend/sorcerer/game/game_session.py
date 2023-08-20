@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import logging
+import random
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field, asdict
-from abc import ABC
 from typing import Any
 
+from sorcerer.game.judges import Judge, get_judge_types
+from sorcerer.game.monsters import Monster, get_monster_types
+from sorcerer.game.cards import Card
 from sorcerer.util import asdict_factory
+
+logger = logging.getLogger(__name__)
 
 
 class Phase(Enum):
@@ -20,10 +26,6 @@ class Phase(Enum):
 
     def __str__(self) -> str:
         return self.value
-
-
-class Card(ABC):
-    card_id: str
 
 
 @dataclass
@@ -44,7 +46,9 @@ class GameView:
     player_count: int
     game_phase: Phase
     created_at: datetime
+    judge: Judge | None = None
     others: list[PlayerView] = field(default_factory=list)
+    monsters: list[Monster] = field(default_factory=list)
     cards: list[Card] = field(default_factory=list)  # This player's cards
     join_key: str | None = None
 
@@ -81,10 +85,10 @@ class GameSession:
     counter: int = 0
     player_counter: int = 0
     phase: Phase = Phase.LOBBY
-    judge: Card | None = None
+    judge: Judge | None = None
     players: list[PlayerSession] = field(default_factory=list)
     spells: list[Card] = field(default_factory=list)
-    monsters: list[Card] = field(default_factory=list)
+    monsters: list[Monster] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     @property
@@ -105,12 +109,34 @@ class GameSession:
 
         return player
 
+    def choose_monsters(self, count: int = 5) -> list[Monster]:
+        monsters = get_monster_types()
+        chosen = []
+
+        for _ in range(count):
+            if not monsters:
+                break
+
+            monster_type = random.choice(monsters)
+
+            # Ensure the same monster is not chosen multiple times
+            monsters.remove(monster_type)
+
+            chosen.append(monster_type())
+
+        return chosen
+
     def begin_game(self):
         self.phase = Phase.SETUP
+        logger.debug("Game %s beginning", id(self))
 
         # 1. Choose Judge
+        judge_type = random.choice(get_judge_types())
+        logger.debug("Game %s chose judge: %s", id(self), judge_type.__name__)
+        self.judge = judge_type()
 
         # 2. Choose Monsters
+        self.monsters = self.choose_monsters()
 
         # 3. Deal Cards
 
@@ -120,7 +146,13 @@ class GameSession:
         self.counter += 1
         return self.counter
 
-    def get_view(self, player_id: int) -> GameView:
+    def get_view(
+        self,
+        player_id: int,
+        *,
+        join_key: bool = False,
+        watch_key: bool = False,
+    ) -> GameView:
         """
         Create a redacted view of the game state, which is safe to
         show to a player.
@@ -131,6 +163,8 @@ class GameSession:
 
         Arguments:
             player_id: The player that this state view is intended for.
+            join_key: Indicates whether to include the join_key in the game view.
+            watch_key: Indicates whether to include the watch_key in the game view.
         """
         others = []
         cards = []
@@ -149,6 +183,12 @@ class GameSession:
             player_count=len(self.players),
             game_phase=self.phase,
             others=others,
+            monsters=self.monsters.copy(),
+            judge=self.judge,
             cards=cards,
             created_at=self.created_at,
+            join_key=self.join_key if join_key else None,
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self, dict_factory=asdict_factory)

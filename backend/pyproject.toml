@@ -1,3 +1,9 @@
 [tool.black]
 line-length = 120
 target-versions = ["py39", "py310", "py311"]
+
+[tool.mypy]
+files = [
+    "sorcerer",
+    "tests",
+]

@@ -41,14 +41,16 @@ def parse_args():
 
     serve_cmd = subparsers.add_parser("serve")
 
-    return parser.parse_args()
+    return parser, parser.parse_args()
 
 
 def main():
-    args = parse_args()
+    parser, args = parse_args()
 
     if args.cmd == Cmd.SERVE.value:
         serve()
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":

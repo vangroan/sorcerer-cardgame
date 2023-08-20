@@ -83,9 +83,7 @@ async def play(
                 message_kind = Kind(data.get("kind"))
             except ValueError:
                 logger.warning("Unknown message kind: %s", data.get("kind"))
-                await websocket.send(
-                    json.dumps({"kind": "error", "message": "Unknown message kind"})
-                )
+                await websocket.send(json.dumps({"kind": "error", "message": "Unknown message kind"}))
                 continue
 
             if message_kind == Kind.INCR:
@@ -104,15 +102,11 @@ async def play(
                 else:
                     await websocket.send(error("Only the leader can begin the game"))
             elif message_kind == Kind.STATE:
-                game_view = game.get_view(player.player_id)
-                await websocket.send(
-                    json.dumps({"kind": str(Kind.STATE), "game": game_view.to_dict()})
-                )
+                game_view = game.get_view(player.player_id, join_key=True)
+                await websocket.send(json.dumps({"kind": str(Kind.STATE), "game": game_view.to_dict()}))
 
         except GameError as err:
-            logger.debug(
-                "Player-%d violated a game rule: %s", player.player_id, err.message
-            )
+            logger.debug("Player-%d violated a game rule: %s", player.player_id, err.message)
             data = err.to_dict()
             message = json.dumps(data)
             await websocket.send(message)
