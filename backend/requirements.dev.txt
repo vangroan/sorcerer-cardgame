@@ -2,3 +2,4 @@ black
 mypy
 pyupgrade
 pytest
+pytest-cov

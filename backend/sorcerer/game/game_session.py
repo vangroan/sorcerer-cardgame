@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 MONSTER_BET_COUNT = {1, 2, 3}
 """Players can only bet on 1, 2 or 3 monsters during a round."""
 
+MAX_ROUNDS = 3
+"""Maximum number of fight rounds."""
+
 
 class Phase(Enum):
     """
@@ -28,6 +31,7 @@ class Phase(Enum):
     LOBBY = "lobby"  # Players joining
     SETUP = "setup"  # Server selecting judge and monsters
     BETTING = "betting"  # Players choosing monster to bet on
+    FIGHT = "fight"  # Players can play spells
 
     def __str__(self) -> str:
         return self.value
@@ -51,6 +55,7 @@ class GameView:
     player_id: int
     player_count: int
     game_phase: Phase
+    game_round: int
     deck_count: int
     discard_count: int
     created_at: datetime
@@ -110,6 +115,7 @@ class GameSession:
     counter: int = 0
     player_counter: int = 0
     phase: Phase = Phase.LOBBY
+    round: int = -1
     judge: Judge | None = None
     discarded_judges: list[Monster] = field(default_factory=list)
     players: list[PlayerSession] = field(default_factory=list)
@@ -126,6 +132,10 @@ class GameSession:
     @property
     def is_betting_phase(self) -> bool:
         return self.phase == Phase.BETTING
+
+    @property
+    def is_fight_phase(self) -> bool:
+        return self.phase == Phase.FIGHT
 
     @property
     def player_count(self) -> int:
@@ -193,6 +203,12 @@ class GameSession:
         else:
             return 5
 
+    def all_players_bet(self) -> bool:
+        """
+        Check whether all players have placed their bets.
+        """
+        return all(player.bet_count > 0 for player in self.players)
+
     def deal_cards(self, hand_size: int):
         """
         Fill each player's hand with spells from the deck, until their hand size
@@ -252,6 +268,34 @@ class GameSession:
         self.deal_cards(hand_size)
 
         self.phase = Phase.BETTING
+
+    def begin_round(self, round: int):
+        """
+        Begin a fight round.
+        """
+        if self.phase not in (Phase.BETTING, Phase.FIGHT):
+            raise GameError("Game must be in betting or fight phase to start a new round")
+
+        # All players must have betted.
+        if not self.all_players_bet():
+            raise GameError("Not all players have placed their bets")
+
+        if self.round >= MAX_ROUNDS:
+            raise GameError("TODO: Game end not implemented yet")
+
+        self.phase = Phase.FIGHT
+        logger.debug("Round %d starting", round)
+
+        self.round = round
+
+    def next_round(self):
+        """
+        Advance the game to the next round.
+        """
+        self.begin_round(self.round + 1)
+
+        # Refill player's cards
+        self.deal_cards(self.determine_hand_size())
 
     def place_player_bets(self, player_id: int, monster_bets: list[str]):
         """
@@ -322,6 +366,7 @@ class GameSession:
             player_id,
             player_count=len(self.players),
             game_phase=self.phase,
+            game_round=self.round,
             deck_count=len(self.spells),
             discard_count=len(self.discarded_spells),
             others=others,

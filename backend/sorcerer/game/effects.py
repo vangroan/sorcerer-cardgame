@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 
@@ -6,12 +6,15 @@ from dataclasses import dataclass, field
 class Effect(ABC):
     effect_id: str = field(init=False)
 
+    @abstractmethod
+    def process(self) -> None:
+        raise NotImplementedError()
+
 
 # =============================================================================
 # Monster Effects
 
 
-@dataclass(frozen=True)
 class Undead(Effect):
     """
     Monster effect that inverts the power of all spells played on it.
@@ -19,16 +22,40 @@ class Undead(Effect):
 
     effect_id: str = "effect_undead"
 
+    def process(self) -> None:
+        pass
+
 
 # =============================================================================
 # Judge Effects
 
 
-@dataclass(frozen=True)
 class Dispel(Effect):
     effect_id: str = "effect_dispel"
 
+    def process(self) -> None:
+        pass
 
-@dataclass(frozen=True)
+
 class Eject(Effect):
     effect_id: str = "effect_eject"
+
+    def process(self) -> None:
+        pass
+
+
+# =============================================================================
+# Spell Effects
+
+
+@dataclass(frozen=True)
+class Power(Effect):
+    """
+    Simple effect that increases or decreases a monster's power.
+    """
+
+    effect_id: str = "effect_power"
+    power: int = field(init=True, default=0)
+
+    def process(self) -> None:
+        pass

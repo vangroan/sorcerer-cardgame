@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 import itertools
 
+from sorcerer.game.effects import Effect
+from sorcerer.game import effects
 
 SpellKind = Literal["direct", "enchant", "support"]
 
@@ -15,11 +17,12 @@ class Card(ABC):
     spell_id: str = field(init=False)
     spell_kind: SpellKind = field(init=False)
     forbidden: bool = field(init=False)
+    effects: tuple[Effect, ...] = field(init=False)
     owner: int | None = None
 
 
 def get_standard_deck() -> list[Card]:
-    deck = []
+    deck: list[Card] = []
 
     count = itertools.count(start=0)
 
@@ -36,19 +39,23 @@ def get_standard_deck() -> list[Card]:
 # Direct Spells
 
 
+@dataclass(frozen=True)
 class Firebolt(Card):
     spell_id: str = "card_firebolt"
     spell_kind: SpellKind = "direct"
     forbidden: bool = False
+    effects: tuple[Effect, ...] = (effects.Power(power=5),)
 
 
 class Frostbolt(Card):
     spell_id: str = "card_frostbolt"
     spell_kind: SpellKind = "direct"
     forbidden: bool = False
+    effects: tuple[Effect, ...] = ()
 
 
 class MagicMissile(Card):
     spell_id: str = "card_magicmissile"
     spell_kind: SpellKind = "direct"
     forbidden: bool = False
+    effects: tuple[Effect, ...] = ()

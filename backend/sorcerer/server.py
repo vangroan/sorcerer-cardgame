@@ -34,6 +34,7 @@ class Kind(Enum):
     INIT = "init"  # First player initialises the game, or others join.
     JOINED = "joined"  # Notify all players that someone has joined.
     BEGIN = "begin"  # First player begins the game after other palyers have joined.
+    NEXT_ROUND = "next_round"  # Betting is done and round starts.
     SETUP = "setup"  # Signal players that the server is setting up the game.
     STATE = "state"  # Player requested the latest state.
     BET = "bet"  # Player places a bet. Only valid during the "betting" phase.
@@ -107,10 +108,13 @@ async def play(
                 await websocket.send(json.dumps({"kind": str(Kind.STATE), "game": game_view.to_dict()}))
             elif message_kind == Kind.BET:
                 if not game.is_betting_phase:
-                    logger.warning("Player-%d placed bet outside of betting phase", player.player_id)
+                    logger.warning(
+                        "Player-%d placed bet outside of betting phase",
+                        player.player_id,
+                    )
                     await websocket.send(error("Bet must specify Monster IDs"))
 
-                if monster_ids := data.get("monster_ids"):
+                elif monster_ids := data.get("monster_ids"):
                     if isinstance(monster_ids, list):
                         monser_bets = [str(monster_id) for monster_id in monster_ids]
                         game.place_player_bets(player.player_id, monser_bets)
@@ -119,8 +123,27 @@ async def play(
                         await websocket.send(json.dumps({"kind": str(Kind.BET), "game": game_view.to_dict()}))
                     else:
                         await websocket.send(error("monster_ids must be an array"))
+
                 else:
                     await websocket.send(error("Bet must specify Monster IDs"))
+
+            elif message_kind == Kind.NEXT_ROUND:
+                if not player.is_leader:
+                    logger.warning(
+                        "Player-%d attempted to begin fight phase, but isn't leader",
+                        player.player_id,
+                    )
+                    await websocket.send(error("You are not the leader"))
+
+                elif not game.is_betting_phase:
+                    logger.warning(
+                        "Player-%d began fight outside of betting phase",
+                        player.player_id,
+                    )
+                    await websocket.send(error("Game must be in betting phase"))
+
+                game.begin_round(0)
+                broadcast(clients, Kind.NEXT_ROUND, {})
 
         except GameError as err:
             logger.debug("Player-%d violated a game rule: %s", player.player_id, err.message)
