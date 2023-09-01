@@ -5,7 +5,7 @@ from typing import Any
 
 def asdict_factory(data: list[tuple[str, Any]]):
     """
-    A customer ``dataclasses.asdict`` factory that can handle enums.
+    A custom ``dataclasses.asdict`` factory that can handle enums.
     """
 
     def convert_value(obj):
