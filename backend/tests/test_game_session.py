@@ -58,7 +58,9 @@ def test_begin_fight() -> None:
     game.place_player_bets(player_3.player_id, ["monster_skeleton", "monster_darkelf"])
 
     assert game.round != 0
+    assert game.turn != 0
     game.begin_round(0)
 
     assert game.is_fight_phase
     assert game.round == 0
+    assert game.turn == 1  # random

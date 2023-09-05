@@ -11,6 +11,7 @@ from sorcerer.game.errors import GameError
 from sorcerer.game.judges import Judge, get_judge_types
 from sorcerer.game.monsters import Monster, get_monster_types
 from sorcerer.game.cards import Card, get_standard_deck
+from sorcerer.game.interface import Target, TargetKind
 from sorcerer.util import asdict_factory
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class GameView:
     player_count: int
     game_phase: Phase
     game_round: int
+    game_turn: int
     deck_count: int
     discard_count: int
     created_at: datetime
@@ -116,6 +118,7 @@ class GameSession:
     player_counter: int = 0
     phase: Phase = Phase.LOBBY
     round: int = -1
+    turn: int = -1
     judge: Judge | None = None
     discarded_judges: list[Monster] = field(default_factory=list)
     players: list[PlayerSession] = field(default_factory=list)
@@ -139,15 +142,36 @@ class GameSession:
 
     @property
     def player_count(self) -> int:
+        """
+        Number of players that joined the game.
+        """
         return len(self.players)
 
     def find_player(self, player_id: int) -> PlayerSession | None:
+        """
+        Find a player in the game session with the given player ID.
+
+        Returns ``None`` if the player cannot be found.
+        """
         for player in self.players:
             if player.player_id == player_id:
                 return player
         return None
 
+    def first_player(self) -> PlayerSession | None:
+        """
+        Determine the player that goes first.
+        """
+        if self.players:
+            return random.choice(self.players)
+        return None
+
     def create_new_player(self, is_leader=False) -> PlayerSession:
+        """
+        Create a new player session inside this game session.
+
+        The returned instance is shared state.
+        """
         player_id = self.player_counter
         self.player_counter += 1
 
@@ -160,6 +184,31 @@ class GameSession:
         self.players.append(player)
 
         return player
+
+    def find_player_card(self, player_id: int, card_id: int) -> Card | None:
+        """
+        Find a card in a player's hand.
+        """
+        player = self.find_player(player_id)
+        if player is None:
+            raise GameError(f"Player does not exist: {player_id}")
+
+        for card in player.cards:
+            if card.card_id == card_id:
+                return card
+
+        return None
+
+    def find_monster(self, monster_id: str) -> Monster | None:
+        """
+        Find a monster in the game session with the given monster ID.
+
+        Returns ``None`` if the monster cannot be found.
+        """
+        for monster in self.monsters:
+            if monster.monster_id == monster_id:
+                return monster
+        return None
 
     def choose_monsters(self, count: int = 5) -> list[Monster]:
         monsters = get_monster_types()
@@ -288,6 +337,11 @@ class GameSession:
 
         self.round = round
 
+        # Reset round turns by starting with first player
+        first_player = self.first_player()
+        assert first_player is not None, "Round started with no players"
+        self.turn = first_player.player_id
+
     def next_round(self):
         """
         Advance the game to the next round.
@@ -297,7 +351,7 @@ class GameSession:
         # Refill player's cards
         self.deal_cards(self.determine_hand_size())
 
-    def place_player_bets(self, player_id: int, monster_bets: list[str]):
+    def place_player_bets(self, player_id: int, monster_bets: list[str]) -> None:
         """
         Place the player's bet on their selected monsters,
         and check those bets against the game rules.
@@ -323,6 +377,59 @@ class GameSession:
 
         # Rule: Players can change their bets in the betting phase.
         player.monster_bets = monster_bets
+
+    def resolve_target(self, target: Target) -> None | Any:
+        """
+        Given a spell target, determine the precise instance.
+
+        Returns:
+            An instance of a monster, spell card, judge or player.
+            ``None`` if no instance could be determined.
+        """
+        match target.kind:
+            case TargetKind.MONSTER:
+                if not isinstance(target.target_id, str):
+                    raise TypeError("Monster target ID must be a string")
+
+                monster = self.find_monster(target.target_id)
+                if monster is None:
+                    raise GameError(f"Monster target ID does not exist: {target.target_id}")
+
+                return monster
+
+            case TargetKind.SPELL:
+                if not isinstance(target.target_id, int):
+                    raise TypeError(f"Spell target ID must be a integer: {target.target_id}")
+
+                # Spell cards are all over the place
+                return self.resolve_spell_card(target.target_id)
+
+            case TargetKind.PLAYER:
+                # Player is targeting themselves
+                if not isinstance(target.target_id, int):
+                    raise TypeError("Player target ID must be a integer")
+
+                player = self.find_player(target.target_id)
+                if player is None:
+                    raise GameError(f"Player target ID does not exist: {target.target_id}")
+
+            case TargetKind.JUDGE:
+                if not isinstance(target.target_id, int):
+                    raise TypeError(f"Judge target ID must be a integer: {target.target_id}")
+
+                return self.judge
+
+            case _:
+                raise GameError(f"Unknown target kind: {target.kind}")
+
+        return None
+
+    def resolve_spell_card(self, spell_id: int) -> Card | None:
+        # The many places where spells can live
+        # On monsters
+        # On the judge
+        # In a player's hand
+        raise NotImplementedError("TODO")
 
     def incr(self) -> int:
         self.counter += 1
@@ -367,6 +474,7 @@ class GameSession:
             player_count=len(self.players),
             game_phase=self.phase,
             game_round=self.round,
+            game_turn=self.turn,
             deck_count=len(self.spells),
             discard_count=len(self.discarded_spells),
             others=others,

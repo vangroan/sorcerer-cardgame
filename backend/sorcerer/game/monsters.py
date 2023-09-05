@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass, field
+from typing import Callable
 
-from sorcerer.game.cards import Card
-from sorcerer.game.effects import Effect, Undead
+from sorcerer.game.cards import Card, CardHolder
+
+from sorcerer.game.interface import effect, EffectDef
 
 
-@dataclass(frozen=True)
-class Monster(ABC):
+@dataclass(frozen=False)
+class Monster(CardHolder, ABC):
     """
     Monsters must not be shared between game sessions, because they
     hold the spells casts on them during their session.
@@ -18,8 +20,12 @@ class Monster(ABC):
     name: str = field(init=False)
     prize: int = field(init=False)
     power: int = field(init=False)
-    effect: Effect | None = field(init=False)
-    cards: list[Card] = field(default_factory=list)
+    health: int = field(default=0)
+    effect: EffectDef | None = field(init=False)
+    cards: list[Card] = field(init=False, default_factory=list)
+
+    def __post_init__(self):
+        self.health = self.power
 
 
 def get_monster_types() -> list[type[Monster]]:
@@ -42,7 +48,7 @@ class DarkElf(Monster):
     name: str = "Dark Elf"
     prize: int = 4
     power: int = 7
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Demon(Monster):
@@ -50,7 +56,7 @@ class Demon(Monster):
     name: str = "Demon"
     prize: int = 3
     power: int = 9
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Dragon(Monster):
@@ -58,7 +64,7 @@ class Dragon(Monster):
     name: str = "Dragon"
     prize: int = 3
     power: int = 10
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Ghost(Monster):
@@ -66,7 +72,7 @@ class Ghost(Monster):
     name: str = "Ghost"
     prize: int = 5
     power: int = 5
-    effect: Effect = Undead()
+    effect: EffectDef = effect("Undead")
 
 
 class Goblin(Monster):
@@ -74,7 +80,7 @@ class Goblin(Monster):
     name: str = "Goblin"
     prize: int = 10
     power: int = 1
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Lizardman(Monster):
@@ -82,7 +88,7 @@ class Lizardman(Monster):
     name: str = "Lizardman"
     prize: int = 6
     power: int = 4
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Minotaur(Monster):
@@ -90,7 +96,7 @@ class Minotaur(Monster):
     name: str = "Minotaur"
     prize: int = 4
     power: int = 8
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Orc(Monster):
@@ -98,7 +104,7 @@ class Orc(Monster):
     name: str = "Orc"
     prize: int = 8
     power: int = 2
-    effect: Effect | None = None
+    effect: EffectDef | None = None
 
 
 class Skeleton(Monster):
@@ -106,7 +112,7 @@ class Skeleton(Monster):
     name: str = "Skeleton"
     prize: int = 7
     power: int = 3
-    effect: Effect = Undead()
+    effect: EffectDef = effect("Undead")
 
 
 class Succubus(Monster):
@@ -114,4 +120,4 @@ class Succubus(Monster):
     name: str = "Succubus"
     prize: int = 5
     power: int = 6
-    effect: Effect | None = None
+    effect: EffectDef | None = None

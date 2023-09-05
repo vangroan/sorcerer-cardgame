@@ -12,9 +12,6 @@ def test_monster_contract():
     assert demon_1.monster_id == "monster_demon", "card_id data contract not working as expected"
     assert data["monster_id"] == "monster_demon", "card_id is not converted by asdict"
 
-    with pytest.raises(FrozenInstanceError):
-        demon_1.monster_id = "****"
-
     demon_1.cards.append(Firebolt(card_id=0))
     print("Demon: ", demon_1)
 

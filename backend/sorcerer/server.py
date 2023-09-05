@@ -9,9 +9,10 @@ from typing import Iterable, Generator
 import websockets
 from websockets.exceptions import ConnectionClosedOK
 from websockets.server import serve, WebSocketServerProtocol
-from sorcerer.game.errors import GameError
 
+from sorcerer.game.errors import GameError
 from sorcerer.game.game_session import GameSession, PlayerSession
+from sorcerer.game.effects import EffectContext, on_cast
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class Kind(Enum):
     SETUP = "setup"  # Signal players that the server is setting up the game.
     STATE = "state"  # Player requested the latest state.
     BET = "bet"  # Player places a bet. Only valid during the "betting" phase.
+    ACTION = "action"  # Player has played a card
     INCR = "incr"
     ERR = "error"
 
@@ -144,6 +146,22 @@ async def play(
 
                 game.begin_round(0)
                 broadcast(clients, Kind.NEXT_ROUND, {})
+
+            elif message_kind == Kind.ACTION:
+                card_id = data["card_id"]
+                target = data.get["target"]
+
+                # Lookup target instance
+                target_entity = game.resolve_target(target)
+
+                # Lookup card instance that player is playing
+                spell_card = game.find_player_card(player.player_id, card_id)
+
+                if spell_card is None:
+                    raise GameError(f"Player-{player.player_id} does not have card {card_id}")
+
+                context = EffectContext(game, spell_card, target, target_entity, caster=player)
+                on_cast(context)
 
         except GameError as err:
             logger.debug("Player-%d violated a game rule: %s", player.player_id, err.message)
