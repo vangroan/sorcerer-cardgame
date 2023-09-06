@@ -7,15 +7,16 @@ types in the domain.
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Sequence, TypeVar, cast
 from sorcerer.game.errors import GameError
 
 from sorcerer.game.interface import EffectDef, Target
 from sorcerer.game.monsters import Monster
 from sorcerer.game.game_session import GameSession, PlayerSession
 from sorcerer.game.cards import Card
+from sorcerer.game.moves import Move
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,37 @@ def _register(ty: type) -> type:
     return ty
 
 
+TClass = TypeVar("TClass", bound=type)
+_TYPES_EFFECT_HANDLERS: dict[str, type[EffectHandler]] = {}
+_EFFECT_ID_FIELD = "effect_id"
+
+
+def effect_handler(
+    effect_id: str,
+) -> Callable[[type[EffectHandler]], type[EffectHandler]]:
+    """
+    Register an effect handler with the global registry.
+    """
+
+    def decorator(cls: type[EffectHandler]) -> type[EffectHandler]:
+        if not issubclass(cls, EffectHandler):
+            raise TypeError(f"Type '{cls!r}' is not an {EffectHandler.__name__}")
+
+        _TYPES_EFFECT_HANDLERS[effect_id] = cls
+
+        setattr(cls, _EFFECT_ID_FIELD, effect_id)
+        if annotations := getattr(cls, "__annotations__"):
+            if _EFFECT_ID_FIELD not in annotations:
+                annotations[_EFFECT_ID_FIELD] = str
+
+        # NOTE: Logged records will not print if this module is imported before logging is setup.
+        logger.debug("Registering effect type: %s" % cls.__name__)
+
+        return cls
+
+    return decorator
+
+
 @dataclass(frozen=True)
 class EffectContext:
     """
@@ -96,14 +128,16 @@ class EffectContext:
     target_entity: Any | None  # Instance of entity being targeted
     caster: PlayerSession  # The player that casted the spell card
 
+    @property
+    def target_monster(self) -> Monster | None:
+        if isinstance(self.target_entity, Monster):
+            return cast(Monster, self.target_entity)
+        return None
+
 
 @dataclass(frozen=True)
 class Effect(ABC):
     effect_id: str = field(init=False)
-
-    @abstractmethod
-    def process(self, ctx: EffectContext) -> None:
-        raise NotImplementedError()
 
     def on_cast(self, ctx: EffectContext):
         """
@@ -116,6 +150,23 @@ class Effect(ABC):
         Hook executed when a fight round ends.
         """
         ...
+
+
+class EffectHandler:
+    context: EffectContext
+
+    @property
+    def effect_id(self) -> str:
+        return getattr(self, _EFFECT_ID_FIELD)
+
+
+@effect_handler("effect_fireball")
+class FireballHandler(EffectHandler):
+    def process(self, ctx: EffectContext) -> None:
+        ...
+
+
+print(f"FireballHandler: {FireballHandler().effect_id!r}")
 
 
 # =============================================================================
@@ -144,17 +195,11 @@ class Undead(Effect):
 class Dispel(Effect):
     effect_id: str = "effect_dispel"
 
-    def process(self, ctx: EffectContext) -> None:
-        pass
-
 
 @dataclass(frozen=True)
 @_register
 class Eject(Effect):
     effect_id: str = "effect_eject"
-
-    def process(self, ctx: EffectContext) -> None:
-        pass
 
 
 # =============================================================================
@@ -176,9 +221,25 @@ class Power(Effect):
         monster.cards.append(ctx.spell_card)
 
     def on_cast(self, ctx: EffectContext):
-        monster: Monster = ctx.target_entity  # type: ignore
-        monster.cards.append(ctx.spell_card)
+        if monster := ctx.target_monster:
+            monster.cards.append(ctx.spell_card)
 
-    def on_round_end(self, ctx: EffectContext) -> None:
-        monster: Monster = ctx.target_entity  # type: ignore
-        monster.health += self.power
+            ctx.game_session.move(
+                "card_append",
+                effect_id=self.effect_id,
+                card_id=ctx.spell_card.card_id,
+                monster_id=monster.monster_id,
+            )
+
+    def on_round_end(self, ctx: EffectContext):
+        if monster := ctx.target_monster:
+            monster.health += self.power
+
+            ctx.game_session.move(
+                "power_apply",
+                effect_id=self.effect_id,
+                card_id=ctx.spell_card.card_id,
+                monster_id=monster.monster_id,
+                power=self.power,
+                new_health=monster.health,
+            )

@@ -12,6 +12,7 @@ from sorcerer.game.judges import Judge, get_judge_types
 from sorcerer.game.monsters import Monster, get_monster_types
 from sorcerer.game.cards import Card, get_standard_deck
 from sorcerer.game.interface import Target, TargetKind
+from sorcerer.game.moves import Move
 from sorcerer.util import asdict_factory
 
 logger = logging.getLogger(__name__)
@@ -126,6 +127,7 @@ class GameSession:
     discarded_spells: list[Card] = field(default_factory=list)
     monsters: list[Monster] = field(default_factory=list)
     discarded_monsters: list[Monster] = field(default_factory=list)
+    moves: list[Move] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     @property
@@ -430,6 +432,12 @@ class GameSession:
         # On the judge
         # In a player's hand
         raise NotImplementedError("TODO")
+
+    def move(self, move_id: str, *args, **kwargs):
+        self.moves.append(Move(move_id, *args, **kwargs))
+
+    def enqueue(self, move: Move):
+        self.moves.append(move)
 
     def incr(self) -> int:
         self.counter += 1
